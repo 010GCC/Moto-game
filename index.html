@@ -29,11 +29,13 @@
         }
         canvas {
             border: 4px solid #e94560;
-            border-radius: 8px;
+            border-top: none;
+            border-radius: 0 0 8px 8px;
             box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
             max-width: 100%;
             height: auto;
             touch-action: none;
+            display: block;
         }
         #touchControls {
             display: none;
@@ -162,47 +164,15 @@
             border: 1px solid #555;
             font-family: monospace;
         }
-        #leaderboard {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.8);
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #e94560;
-            min-width: 180px;
-            z-index: 2;
-        }
-        #leaderboard h3 {
-            color: #e94560;
-            margin: 0 0 10px 0;
-            font-size: 16px;
-            text-align: center;
-        }
-        #leaderboard ol {
-            margin: 0;
-            padding-left: 25px;
-            color: #fff;
-            font-size: 14px;
-        }
-        #leaderboard li {
-            margin: 5px 0;
-        }
-        #leaderboard .score-distance {
-            color: #e94560;
-            float: right;
-        }
-        #leaderboard .empty {
-            color: #666;
-            font-style: italic;
-            text-align: center;
-        }
         /* Marquee ticker above canvas */
-        #scoreTicker {
-            width: 1008px;
+        #gameWrapper {
+            display: flex;
+            flex-direction: column;
             max-width: 100%;
+        }
+        #scoreTicker {
             background: rgba(0,0,0,0.9);
-            border: 2px solid #e94560;
+            border: 4px solid #e94560;
             border-bottom: none;
             border-radius: 8px 8px 0 0;
             padding: 7px 0;
@@ -277,6 +247,7 @@
     </style>
 </head>
 <body>
+    <div id="gameWrapper">
     <div id="scoreTicker"><div id="tickerTrack"><span>Loading scores...</span></div></div>
     <div id="gameContainer">
         <canvas id="game" width="1000" height="500"></canvas>
@@ -298,10 +269,6 @@
             <p id="newRecord" style="display:none; color:#4ade80;">NEW HIGH SCORE!</p>
             <button onclick="startGame()">TRY AGAIN</button>
         </div>
-        <div id="leaderboard">
-            <h3>LEADERBOARD</h3>
-            <ol id="scoreList"></ol>
-        </div>
         <div id="nameInput">
             <h3>ENTER YOUR NAME</h3>
             <input type="text" id="playerName" maxlength="12" placeholder="Player">
@@ -309,6 +276,7 @@
             <button onclick="saveName()">OK</button>
         </div>
     </div>
+    </div><!-- end gameWrapper -->
     <div id="instructions">
         Hold <strong>G</strong> to go | <strong>SPACE</strong> to jump | <strong>M</strong> to mute music | Land smoothly!
     </div>
@@ -685,17 +653,6 @@
         }
 
         function renderLeaderboard(highlightScore = null) {
-            const list = document.getElementById('scoreList');
-            if (cachedScores.length === 0) {
-                list.innerHTML = '<p class="empty">No scores yet</p>';
-                return;
-            }
-            list.innerHTML = cachedScores.map(s => {
-                const isNew = highlightScore && s.distance === highlightScore && s.name === playerName;
-                return `<li class="${isNew ? 'new-record' : ''}">
-                    ${s.name} <span class="score-distance">${s.distance}m</span>
-                </li>`;
-            }).join('');
             updateTicker();
         }
 
