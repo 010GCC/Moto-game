@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moto Rush</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            flex-direction: column;
+            gap: 20px;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        canvas {
+            border: 4px solid #e94560;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        #ui div {
+            margin: 5px 0;
+        }
+        #instructions {
+            color: #aaa;
+            text-align: center;
+            font-size: 14px;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.85);
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+            border: 2px solid #e94560;
+        }
+        #gameOver h2 {
+            color: #e94560;
+            font-size: 36px;
+            margin-bottom: 20px;
+        }
+        #gameOver p {
+            color: #fff;
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+        #gameOver button {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        #gameOver button:hover {
+            background: #ff6b6b;
+        }
+        #startScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #e94560;
+        }
+        #startScreen h1 {
+            color: #e94560;
+            font-size: 48px;
+            margin-bottom: 30px;
+        }
+        #startScreen p {
+            color: #fff;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        #startScreen button {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+        #startScreen button:hover {
+            background: #ff6b6b;
+        }
+        .key {
+            display: inline-block;
+            background: #333;
+            padding: 5px 12px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="game" width="1000" height="500"></canvas>
+        <div id="ui">
+            <div>Distance: <span id="distance">0</span>m</div>
+            <div>Speed: <span id="speed">0</span> km/h</div>
+            <div>Best: <span id="best">0</span>m</div>
+        </div>
+        <div id="startScreen">
+            <h1>MOTO RUSH</h1>
+            <p>Hold <span class="key">G</span> to accelerate</p>
+            <p>Press <span class="key">SPACE</span> to jump</p>
+            <p>Land at the right angle to keep speed!</p>
+            <button onclick="startGame()">START</button>
+        </div>
+        <div id="gameOver">
+            <h2>CRASHED!</h2>
+            <p>Distance: <span id="finalDistance">0</span>m</p>
+            <button onclick="startGame()">TRY AGAIN</button>
+        </div>
+    </div>
+    <div id="instructions">
+        Hold <strong>G</strong> to go | <strong>SPACE</strong> to jump | <strong>M</strong> to mute music | Land smoothly!
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+
+        // Audio system
+        let audioCtx = null;
+        let engineOscillator = null;
+        let engineGain = null;
+        let windNoise = null;
+        let windGain = null;
+        let musicPlaying = false;
+        let musicGain = null;
+        let musicMuted = false;
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Create engine sound (continuous)
+            engineOscillator = audioCtx.createOscillator();
+            engineGain = audioCtx.createGain();
+
+            engineOscillator.type = 'sawtooth';
+            engineOscillator.frequency.value = 80;
+            engineGain.gain.value = 0;
+
+            engineOscillator.connect(engineGain);
+            engineGain.connect(audioCtx.destination);
+            engineOscillator.start();
+
+            // Create wind noise for airborne
+            const bufferSize = 2 * audioCtx.sampleRate;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
+
+            windNoise = audioCtx.createBufferSource();
+            windNoise.buffer = noiseBuffer;
+            windNoise.loop = true;
+
+            // Filter for wind sound
+            const windFilter = audioCtx.createBiquadFilter();
+            windFilter.type = 'bandpass';
+            windFilter.frequency.value = 800;
+            windFilter.Q.value = 0.5;
+
+            windGain = audioCtx.createGain();
+            windGain.gain.value = 0;
+
+            windNoise.connect(windFilter);
+            windFilter.connect(windGain);
+            windGain.connect(audioCtx.destination);
+            windNoise.start();
+
+            // Music master gain
+            musicGain = audioCtx.createGain();
+            musicGain.gain.value = 0.3;
+            musicGain.connect(audioCtx.destination);
+        }
+
+        // Procedural music system
+        const BPM = 140;
+        const beatTime = 60 / BPM;
+        let nextBeatTime = 0;
+        let beatIndex = 0;
+
+        // Musical scales and patterns
+        const bassNotes = [55, 55, 73.42, 73.42, 82.41, 82.41, 73.42, 73.42]; // A1, D2, E2 pattern
+        const leadNotes = [
+            220, 277.18, 329.63, 440,  // A3, C#4, E4, A4
+            220, 329.63, 440, 329.63,
+            246.94, 329.63, 369.99, 493.88, // B3, E4, F#4, B4
+            246.94, 369.99, 329.63, 277.18
+        ];
+        const drumPattern = [1, 0, 0.5, 0, 1, 0, 0.5, 0.3]; // Kick, hat pattern
+
+        function playBass(freq, time, duration) {
+            if (!audioCtx || !musicGain) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+
+            filter.type = 'lowpass';
+            filter.frequency.value = 400;
+
+            gain.gain.setValueAtTime(0.4, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + duration * 0.9);
+
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(musicGain);
+
+            osc.start(time);
+            osc.stop(time + duration);
+        }
+
+        function playLead(freq, time, duration) {
+            if (!audioCtx || !musicGain) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'square';
+            osc.frequency.value = freq;
+
+            gain.gain.setValueAtTime(0.15, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + duration * 0.8);
+
+            osc.connect(gain);
+            gain.connect(musicGain);
+
+            osc.start(time);
+            osc.stop(time + duration);
+        }
+
+        function playDrum(intensity, time) {
+            if (!audioCtx || !musicGain || intensity === 0) return;
+
+            // Kick drum
+            if (intensity >= 0.8) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                osc.frequency.setValueAtTime(150, time);
+                osc.frequency.exponentialRampToValueAtTime(30, time + 0.1);
+
+                gain.gain.setValueAtTime(0.6, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
+
+                osc.connect(gain);
+                gain.connect(musicGain);
+
+                osc.start(time);
+                osc.stop(time + 0.15);
+            }
+
+            // Hi-hat (noise burst)
+            if (intensity > 0 && intensity < 1) {
+                const bufferSize = audioCtx.sampleRate * 0.05;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 8000;
+
+                const gain = audioCtx.createGain();
+                gain.gain.setValueAtTime(intensity * 0.3, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(musicGain);
+
+                noise.start(time);
+            }
+        }
+
+        function scheduleBeat() {
+            if (!audioCtx || !musicPlaying) return;
+
+            const currentTime = audioCtx.currentTime;
+
+            // Schedule ahead
+            while (nextBeatTime < currentTime + 0.2) {
+                const beatInBar = beatIndex % 8;
+                const barIndex = Math.floor(beatIndex / 8) % 2;
+
+                // Bass - every 2 beats
+                if (beatInBar % 2 === 0) {
+                    const bassNote = bassNotes[beatInBar];
+                    playBass(bassNote, nextBeatTime, beatTime * 1.8);
+                }
+
+                // Drums
+                playDrum(drumPattern[beatInBar], nextBeatTime);
+
+                // Lead - every beat, arpeggio pattern
+                const leadNote = leadNotes[(beatIndex % 16)];
+                if (beatIndex % 2 === 0) {
+                    playLead(leadNote, nextBeatTime, beatTime * 0.4);
+                }
+
+                nextBeatTime += beatTime;
+                beatIndex++;
+            }
+        }
+
+        function startMusic() {
+            if (!audioCtx || musicPlaying) return;
+            musicPlaying = true;
+            nextBeatTime = audioCtx.currentTime;
+            beatIndex = 0;
+        }
+
+        function stopMusic() {
+            musicPlaying = false;
+        }
+
+        function toggleMusic() {
+            musicMuted = !musicMuted;
+            if (musicGain) {
+                musicGain.gain.setTargetAtTime(musicMuted ? 0 : 0.3, audioCtx.currentTime, 0.1);
+            }
+        }
+
+        function playJumpSound() {
+            if (!audioCtx) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.15);
+
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        }
+
+        function playLandingSound(hard = false) {
+            if (!audioCtx) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(hard ? 100 : 150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
+
+            gain.gain.setValueAtTime(hard ? 0.5 : 0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playCrashSound() {
+            if (!audioCtx) return;
+
+            // Create noise for explosion
+            const bufferSize = audioCtx.sampleRate * 0.5;
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+            }
+
+            const noise = audioCtx.createBufferSource();
+            noise.buffer = buffer;
+
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+
+            noise.connect(noiseGain);
+            noiseGain.connect(audioCtx.destination);
+
+            noise.start();
+
+            // Low boom
+            const boom = audioCtx.createOscillator();
+            const boomGain = audioCtx.createGain();
+
+            boom.type = 'sine';
+            boom.frequency.setValueAtTime(80, audioCtx.currentTime);
+            boom.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + 0.3);
+
+            boomGain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            boomGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+            boom.connect(boomGain);
+            boomGain.connect(audioCtx.destination);
+
+            boom.start();
+            boom.stop(audioCtx.currentTime + 0.3);
+        }
+
+        function updateEngineSound() {
+            if (!audioCtx || !engineGain || !engineOscillator) return;
+
+            if (keys.g && gameRunning && !moto.crashed) {
+                // Engine on - pitch based on speed
+                const targetFreq = 80 + moto.vx * 15;
+                engineOscillator.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+                engineGain.gain.setTargetAtTime(0.15, audioCtx.currentTime, 0.1);
+            } else {
+                // Engine off or idle
+                engineGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+            }
+
+            // Wind sound when airborne
+            if (windGain) {
+                if (!moto.grounded && gameRunning && !moto.crashed) {
+                    const windVolume = Math.min(0.15, moto.vx * 0.02);
+                    windGain.gain.setTargetAtTime(windVolume, audioCtx.currentTime, 0.1);
+                } else {
+                    windGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.2);
+                }
+            }
+        }
+
+        // Game state
+        let gameRunning = false;
+        let bestDistance = 0;
+
+        // Motorcycle
+        let moto = {
+            x: 150,
+            y: 300,
+            vx: 0,
+            vy: 0,
+            angle: 0,
+            targetAngle: 0,
+            wheelRadius: 15,
+            grounded: true,
+            crashed: false
+        };
+
+        // World
+        let worldOffset = 0;
+        let baseSpeed = 5;
+        let speedMultiplier = 1;
+        let distance = 0;
+
+        // Terrain
+        let terrain = [];
+        let terrainSegmentWidth = 50;
+
+        // Input
+        let keys = {
+            g: false,
+            space: false
+        };
+        let spacePressed = false;
+
+        // Initialize terrain
+        function initTerrain() {
+            terrain = [];
+            let x = 0;
+            let y = 350;
+
+            // Generate initial flat ground
+            for (let i = 0; i < 10; i++) {
+                terrain.push({ x: x, y: y, type: 'flat' });
+                x += terrainSegmentWidth;
+            }
+
+            // Generate more terrain
+            while (x < 3000) {
+                generateTerrainSegment(x, y);
+                x = terrain[terrain.length - 1].x + terrainSegmentWidth;
+                y = terrain[terrain.length - 1].y;
+            }
+        }
+
+        function generateTerrainSegment(startX, startY) {
+            let x = startX;
+            let y = startY;
+
+            // Random chance to create a ramp
+            if (Math.random() < 0.3 && y >= 300) {
+                // Create a ramp going up
+                let rampHeight = 50 + Math.random() * 80;
+                let rampLength = 3 + Math.floor(Math.random() * 3);
+
+                // Upward slope
+                for (let i = 0; i < rampLength; i++) {
+                    y -= rampHeight / rampLength;
+                    terrain.push({ x: x, y: y, type: 'ramp-up' });
+                    x += terrainSegmentWidth;
+                }
+
+                // Flat top (optional)
+                if (Math.random() < 0.5) {
+                    terrain.push({ x: x, y: y, type: 'flat' });
+                    x += terrainSegmentWidth;
+                }
+
+                // Gap
+                let gapLength = 2 + Math.floor(Math.random() * 3);
+                for (let i = 0; i < gapLength; i++) {
+                    terrain.push({ x: x, y: 450, type: 'gap' }); // Low pit
+                    x += terrainSegmentWidth;
+                }
+
+                // Landing ramp (going down to match)
+                for (let i = 0; i < rampLength; i++) {
+                    let landingY = y + (rampHeight / rampLength) * (i + 1);
+                    terrain.push({ x: x, y: landingY, type: 'ramp-down' });
+                    x += terrainSegmentWidth;
+                }
+
+                // Return to base level
+                while (terrain[terrain.length - 1].y < 350) {
+                    terrain.push({ x: x, y: Math.min(terrain[terrain.length - 1].y + 20, 350), type: 'ramp-down' });
+                    x += terrainSegmentWidth;
+                }
+            } else {
+                // Flat or slight variation
+                let variation = (Math.random() - 0.5) * 20;
+                y = Math.max(280, Math.min(370, y + variation));
+                terrain.push({ x: x, y: y, type: 'flat' });
+            }
+        }
+
+        function getTerrainAt(worldX) {
+            // Find the terrain segment at this x position
+            for (let i = 0; i < terrain.length - 1; i++) {
+                if (worldX >= terrain[i].x && worldX < terrain[i + 1].x) {
+                    // Interpolate y position
+                    let t = (worldX - terrain[i].x) / terrainSegmentWidth;
+                    let y = terrain[i].y + (terrain[i + 1].y - terrain[i].y) * t;
+
+                    // Calculate angle
+                    let angle = Math.atan2(terrain[i + 1].y - terrain[i].y, terrainSegmentWidth);
+
+                    return { y: y, angle: angle, type: terrain[i].type };
+                }
+            }
+            return { y: 350, angle: 0, type: 'flat' };
+        }
+
+        function extendTerrain() {
+            let lastSegment = terrain[terrain.length - 1];
+            while (lastSegment.x < worldOffset + 2000) {
+                generateTerrainSegment(lastSegment.x + terrainSegmentWidth, lastSegment.y);
+                lastSegment = terrain[terrain.length - 1];
+            }
+
+            // Remove old terrain
+            while (terrain.length > 0 && terrain[0].x < worldOffset - 500) {
+                terrain.shift();
+            }
+        }
+
+        function update() {
+            if (!gameRunning || moto.crashed) return;
+
+            // Increase speed over time
+            speedMultiplier = 1 + distance / 5000;
+
+            // Handle acceleration
+            let targetSpeed = keys.g ? baseSpeed * speedMultiplier : 0;
+            moto.vx += (targetSpeed - moto.vx) * 0.05;
+
+            // Apply jump
+            if (keys.space && !spacePressed && moto.grounded) {
+                moto.vy = -12 - moto.vx * 0.3;
+                moto.grounded = false;
+                spacePressed = true;
+                playJumpSound();
+            }
+            if (!keys.space) {
+                spacePressed = false;
+            }
+
+            // Apply gravity when airborne
+            if (!moto.grounded) {
+                moto.vy += 0.5;
+            }
+
+            // Update position
+            let worldX = worldOffset + moto.x;
+            let terrainInfo = getTerrainAt(worldX);
+
+            // Move world
+            worldOffset += moto.vx;
+            distance = Math.floor(worldOffset / 10);
+
+            // Handle ground collision
+            if (!moto.grounded) {
+                moto.y += moto.vy;
+
+                // Calculate target angle based on velocity when airborne
+                if (Math.abs(moto.vx) > 0.1) {
+                    moto.targetAngle = Math.atan2(moto.vy, moto.vx);
+                }
+
+                // Check if we hit the ground
+                if (moto.y >= terrainInfo.y - moto.wheelRadius) {
+                    moto.y = terrainInfo.y - moto.wheelRadius;
+
+                    // Check landing angle
+                    let angleDiff = Math.abs(moto.angle - terrainInfo.angle);
+
+                    if (angleDiff > Math.PI / 3) {
+                        // Bad landing - crash!
+                        crash();
+                        return;
+                    } else if (angleDiff > Math.PI / 6) {
+                        // Rough landing - lose some speed
+                        moto.vx *= 0.5;
+                        playLandingSound(true);
+                    } else {
+                        // Good landing
+                        playLandingSound(false);
+                    }
+
+                    moto.vy = 0;
+                    moto.grounded = true;
+                    moto.targetAngle = terrainInfo.angle;
+                }
+            } else {
+                // On ground - follow terrain
+                moto.y = terrainInfo.y - moto.wheelRadius;
+                moto.targetAngle = terrainInfo.angle;
+
+                // Check if we drive off an edge
+                if (terrainInfo.type === 'gap' || terrainInfo.y > moto.y + moto.wheelRadius + 10) {
+                    moto.grounded = false;
+                }
+            }
+
+            // Smooth angle rotation
+            let angleDiff = moto.targetAngle - moto.angle;
+            moto.angle += angleDiff * 0.15;
+
+            // Check for falling into pit
+            if (moto.y > 500) {
+                crash();
+                return;
+            }
+
+            // Extend terrain as needed
+            extendTerrain();
+
+            // Update UI
+            document.getElementById('distance').textContent = distance;
+            document.getElementById('speed').textContent = Math.floor(moto.vx * 20);
+        }
+
+        function crash() {
+            moto.crashed = true;
+            gameRunning = false;
+            playCrashSound();
+            stopMusic();
+
+            if (distance > bestDistance) {
+                bestDistance = distance;
+                document.getElementById('best').textContent = bestDistance;
+            }
+
+            document.getElementById('finalDistance').textContent = distance;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw sky gradient
+            let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#0f0f23');
+            gradient.addColorStop(1, '#1a1a2e');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw distant mountains
+            ctx.fillStyle = '#16213e';
+            ctx.beginPath();
+            ctx.moveTo(0, 400);
+            for (let x = 0; x < canvas.width; x += 100) {
+                let h = 150 + Math.sin((x + worldOffset * 0.1) * 0.01) * 80;
+                ctx.lineTo(x, 400 - h);
+            }
+            ctx.lineTo(canvas.width, 400);
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.lineTo(0, canvas.height);
+            ctx.fill();
+
+            // Draw terrain
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+
+            let started = false;
+            for (let segment of terrain) {
+                let screenX = segment.x - worldOffset;
+                if (screenX >= -100 && screenX <= canvas.width + 100) {
+                    if (!started) {
+                        ctx.moveTo(screenX, segment.y);
+                        started = true;
+                    } else {
+                        ctx.lineTo(screenX, segment.y);
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // Fill below terrain
+            ctx.fillStyle = '#16213e';
+            ctx.beginPath();
+            started = false;
+            for (let segment of terrain) {
+                let screenX = segment.x - worldOffset;
+                if (screenX >= -100 && screenX <= canvas.width + 100) {
+                    if (!started) {
+                        ctx.moveTo(screenX, segment.y);
+                        started = true;
+                    } else {
+                        ctx.lineTo(screenX, segment.y);
+                    }
+                }
+            }
+            ctx.lineTo(canvas.width + 100, canvas.height);
+            ctx.lineTo(-100, canvas.height);
+            ctx.fill();
+
+            // Draw motorcycle
+            ctx.save();
+            ctx.translate(moto.x, moto.y);
+            ctx.rotate(moto.angle);
+
+            // Wheels
+            ctx.fillStyle = '#333';
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 3;
+
+            // Back wheel
+            ctx.beginPath();
+            ctx.arc(-20, 0, moto.wheelRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Front wheel
+            ctx.beginPath();
+            ctx.arc(25, 0, moto.wheelRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Wheel spokes (animated)
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 2;
+            let spokeAngle = worldOffset * 0.1;
+            for (let i = 0; i < 4; i++) {
+                let angle = spokeAngle + (i * Math.PI / 2);
+                // Back wheel spokes
+                ctx.beginPath();
+                ctx.moveTo(-20, 0);
+                ctx.lineTo(-20 + Math.cos(angle) * 12, Math.sin(angle) * 12);
+                ctx.stroke();
+                // Front wheel spokes
+                ctx.beginPath();
+                ctx.moveTo(25, 0);
+                ctx.lineTo(25 + Math.cos(angle) * 12, Math.sin(angle) * 12);
+                ctx.stroke();
+            }
+
+            // Frame
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(-20, 0);
+            ctx.lineTo(-10, -20);
+            ctx.lineTo(15, -25);
+            ctx.lineTo(25, 0);
+            ctx.stroke();
+
+            // Engine
+            ctx.fillStyle = '#444';
+            ctx.fillRect(-5, -15, 15, 12);
+
+            // Seat
+            ctx.fillStyle = '#e94560';
+            ctx.beginPath();
+            ctx.ellipse(0, -25, 15, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Rider (simple)
+            ctx.fillStyle = '#fff';
+            // Body
+            ctx.fillRect(-5, -50, 10, 25);
+            // Head
+            ctx.beginPath();
+            ctx.arc(0, -58, 8, 0, Math.PI * 2);
+            ctx.fill();
+            // Arms
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0, -45);
+            ctx.lineTo(15, -35);
+            ctx.stroke();
+
+            // Handlebar
+            ctx.strokeStyle = '#888';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(15, -25);
+            ctx.lineTo(20, -35);
+            ctx.lineTo(15, -35);
+            ctx.stroke();
+
+            ctx.restore();
+
+            // Draw crash effect
+            if (moto.crashed) {
+                ctx.fillStyle = 'rgba(233, 69, 96, 0.3)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Explosion particles
+                ctx.fillStyle = '#ff6b6b';
+                for (let i = 0; i < 20; i++) {
+                    let angle = (i / 20) * Math.PI * 2;
+                    let dist = 30 + Math.random() * 50;
+                    ctx.beginPath();
+                    ctx.arc(
+                        moto.x + Math.cos(angle) * dist,
+                        moto.y + Math.sin(angle) * dist,
+                        5 + Math.random() * 10,
+                        0, Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            updateEngineSound();
+            scheduleBeat();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            initAudio();
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOver').style.display = 'none';
+
+            // Reset game state
+            moto = {
+                x: 150,
+                y: 300,
+                vx: 0,
+                vy: 0,
+                angle: 0,
+                targetAngle: 0,
+                wheelRadius: 15,
+                grounded: true,
+                crashed: false
+            };
+            worldOffset = 0;
+            distance = 0;
+            speedMultiplier = 1;
+
+            initTerrain();
+            gameRunning = true;
+            startMusic();
+        }
+
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'g') keys.g = true;
+            if (e.key.toLowerCase() === 'm') toggleMusic();
+            if (e.key === ' ') {
+                keys.space = true;
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key.toLowerCase() === 'g') keys.g = false;
+            if (e.key === ' ') keys.space = false;
+        });
+
+        // Start game loop
+        gameLoop();
+    </script>
+</body>
+</html>
