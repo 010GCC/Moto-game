@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moto Rush</title>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -567,43 +570,56 @@
             }
         }
 
+        // Firebase setup
+        const firebaseConfig = {
+            apiKey: "AIzaSyDjTyUl8FQvMmTEzxxonR0wNYwom1fjljk",
+            authDomain: "moto-rush-f47f2.firebaseapp.com",
+            projectId: "moto-rush-f47f2",
+            storageBucket: "moto-rush-f47f2.firebasestorage.app",
+            messagingSenderId: "237153406450",
+            appId: "1:237153406450:web:a1ba6b3730f4d330f4ef6b"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
         // Game state
         let gameRunning = false;
         let bestDistance = 0;
 
         // Leaderboard
         let playerName = localStorage.getItem('motoRushName') || '';
-        let leaderboard = JSON.parse(localStorage.getItem('motoRushLeaderboard') || '[]');
+        let cachedScores = [];
+        let highlightPendingScore = null;
 
-        function getLeaderboard() {
-            return JSON.parse(localStorage.getItem('motoRushLeaderboard') || '[]');
-        }
+        // Real-time listener — keeps leaderboard live across all players
+        db.collection('scores')
+            .orderBy('distance', 'desc')
+            .limit(10)
+            .onSnapshot(snapshot => {
+                cachedScores = snapshot.docs.map(doc => doc.data());
+                renderLeaderboard(highlightPendingScore);
+                if (cachedScores.length > 0 && cachedScores[0].distance > bestDistance) {
+                    bestDistance = cachedScores[0].distance;
+                    document.getElementById('best').textContent = bestDistance;
+                }
+            });
 
         function saveScore(name, score) {
-            let scores = getLeaderboard();
-            scores.push({ name: name, distance: score, date: Date.now() });
-            scores.sort((a, b) => b.distance - a.distance);
-            scores = scores.slice(0, 10); // Keep top 10
-            localStorage.setItem('motoRushLeaderboard', JSON.stringify(scores));
-            return scores;
+            return db.collection('scores').add({ name, distance: score, date: Date.now() });
         }
 
         function isHighScore(score) {
-            const scores = getLeaderboard();
-            if (scores.length < 10) return true;
-            return score > scores[scores.length - 1].distance;
+            if (cachedScores.length < 10) return true;
+            return score > cachedScores[cachedScores.length - 1].distance;
         }
 
         function renderLeaderboard(highlightScore = null) {
-            const scores = getLeaderboard();
             const list = document.getElementById('scoreList');
-
-            if (scores.length === 0) {
+            if (cachedScores.length === 0) {
                 list.innerHTML = '<p class="empty">No scores yet</p>';
                 return;
             }
-
-            list.innerHTML = scores.map((s, i) => {
+            list.innerHTML = cachedScores.map(s => {
                 const isNew = highlightScore && s.distance === highlightScore && s.name === playerName;
                 return `<li class="${isNew ? 'new-record' : ''}">
                     ${s.name} <span class="score-distance">${s.distance}m</span>
@@ -621,11 +637,9 @@
             playerName = input.value.trim() || 'Player';
             localStorage.setItem('motoRushName', playerName);
             document.getElementById('nameInput').style.display = 'none';
-
-            // Now save the pending score
             if (window.pendingScore) {
+                highlightPendingScore = window.pendingScore;
                 saveScore(playerName, window.pendingScore);
-                renderLeaderboard(window.pendingScore);
                 window.pendingScore = null;
             }
         }
@@ -635,14 +649,6 @@
             document.getElementById('playerName').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') saveName();
             });
-            renderLeaderboard();
-
-            // Load best distance from leaderboard
-            const scores = getLeaderboard();
-            if (scores.length > 0) {
-                bestDistance = scores[0].distance;
-                document.getElementById('best').textContent = bestDistance;
-            }
         });
 
         // Motorcycle
@@ -887,14 +893,15 @@
             document.getElementById('newRecord').style.display = isHighScore(distance) ? 'block' : 'none';
             document.getElementById('gameOver').style.display = 'block';
 
-            // Save score to leaderboard
+            // Save score to global leaderboard
             if (isHighScore(distance)) {
                 if (!playerName) {
                     window.pendingScore = distance;
                     promptForName();
                 } else {
+                    highlightPendingScore = distance;
                     saveScore(playerName, distance);
-                    renderLeaderboard(distance);
+                    // onSnapshot listener will re-render leaderboard automatically
                 }
             }
         }
