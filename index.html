@@ -122,6 +122,89 @@
             border: 1px solid #555;
             font-family: monospace;
         }
+        #leaderboard {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #e94560;
+            min-width: 180px;
+        }
+        #leaderboard h3 {
+            color: #e94560;
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            text-align: center;
+        }
+        #leaderboard ol {
+            margin: 0;
+            padding-left: 25px;
+            color: #fff;
+            font-size: 14px;
+        }
+        #leaderboard li {
+            margin: 5px 0;
+        }
+        #leaderboard .score-distance {
+            color: #e94560;
+            float: right;
+        }
+        #leaderboard .empty {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+        }
+        #nameInput {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #e94560;
+            z-index: 10;
+        }
+        #nameInput h3 {
+            color: #e94560;
+            margin-bottom: 20px;
+        }
+        #nameInput input {
+            background: #222;
+            border: 2px solid #e94560;
+            color: #fff;
+            padding: 10px 15px;
+            font-size: 18px;
+            border-radius: 5px;
+            text-align: center;
+            width: 200px;
+            margin-bottom: 15px;
+        }
+        #nameInput input:focus {
+            outline: none;
+            border-color: #ff6b6b;
+        }
+        #nameInput button {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            padding: 10px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .new-record {
+            color: #4ade80 !important;
+            animation: pulse 0.5s ease-in-out infinite alternate;
+        }
+        @keyframes pulse {
+            from { opacity: 1; }
+            to { opacity: 0.6; }
+        }
     </style>
 </head>
 <body>
@@ -142,7 +225,18 @@
         <div id="gameOver">
             <h2>CRASHED!</h2>
             <p>Distance: <span id="finalDistance">0</span>m</p>
+            <p id="newRecord" style="display:none; color:#4ade80;">NEW HIGH SCORE!</p>
             <button onclick="startGame()">TRY AGAIN</button>
+        </div>
+        <div id="leaderboard">
+            <h3>LEADERBOARD</h3>
+            <ol id="scoreList"></ol>
+        </div>
+        <div id="nameInput">
+            <h3>ENTER YOUR NAME</h3>
+            <input type="text" id="playerName" maxlength="12" placeholder="Player">
+            <br>
+            <button onclick="saveName()">OK</button>
         </div>
     </div>
     <div id="instructions">
@@ -477,6 +571,80 @@
         let gameRunning = false;
         let bestDistance = 0;
 
+        // Leaderboard
+        let playerName = localStorage.getItem('motoRushName') || '';
+        let leaderboard = JSON.parse(localStorage.getItem('motoRushLeaderboard') || '[]');
+
+        function getLeaderboard() {
+            return JSON.parse(localStorage.getItem('motoRushLeaderboard') || '[]');
+        }
+
+        function saveScore(name, score) {
+            let scores = getLeaderboard();
+            scores.push({ name: name, distance: score, date: Date.now() });
+            scores.sort((a, b) => b.distance - a.distance);
+            scores = scores.slice(0, 10); // Keep top 10
+            localStorage.setItem('motoRushLeaderboard', JSON.stringify(scores));
+            return scores;
+        }
+
+        function isHighScore(score) {
+            const scores = getLeaderboard();
+            if (scores.length < 10) return true;
+            return score > scores[scores.length - 1].distance;
+        }
+
+        function renderLeaderboard(highlightScore = null) {
+            const scores = getLeaderboard();
+            const list = document.getElementById('scoreList');
+
+            if (scores.length === 0) {
+                list.innerHTML = '<p class="empty">No scores yet</p>';
+                return;
+            }
+
+            list.innerHTML = scores.map((s, i) => {
+                const isNew = highlightScore && s.distance === highlightScore && s.name === playerName;
+                return `<li class="${isNew ? 'new-record' : ''}">
+                    ${s.name} <span class="score-distance">${s.distance}m</span>
+                </li>`;
+            }).join('');
+        }
+
+        function promptForName() {
+            document.getElementById('nameInput').style.display = 'block';
+            document.getElementById('playerName').focus();
+        }
+
+        function saveName() {
+            const input = document.getElementById('playerName');
+            playerName = input.value.trim() || 'Player';
+            localStorage.setItem('motoRushName', playerName);
+            document.getElementById('nameInput').style.display = 'none';
+
+            // Now save the pending score
+            if (window.pendingScore) {
+                saveScore(playerName, window.pendingScore);
+                renderLeaderboard(window.pendingScore);
+                window.pendingScore = null;
+            }
+        }
+
+        // Handle enter key in name input
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('playerName').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') saveName();
+            });
+            renderLeaderboard();
+
+            // Load best distance from leaderboard
+            const scores = getLeaderboard();
+            if (scores.length > 0) {
+                bestDistance = scores[0].distance;
+                document.getElementById('best').textContent = bestDistance;
+            }
+        });
+
         // Motorcycle
         let moto = {
             x: 150,
@@ -709,13 +877,26 @@
             playCrashSound();
             stopMusic();
 
-            if (distance > bestDistance) {
+            const isNewRecord = distance > bestDistance;
+            if (isNewRecord) {
                 bestDistance = distance;
                 document.getElementById('best').textContent = bestDistance;
             }
 
             document.getElementById('finalDistance').textContent = distance;
+            document.getElementById('newRecord').style.display = isHighScore(distance) ? 'block' : 'none';
             document.getElementById('gameOver').style.display = 'block';
+
+            // Save score to leaderboard
+            if (isHighScore(distance)) {
+                if (!playerName) {
+                    window.pendingScore = distance;
+                    promptForName();
+                } else {
+                    saveScore(playerName, distance);
+                    renderLeaderboard(distance);
+                }
+            }
         }
 
         function draw() {
@@ -902,6 +1083,9 @@
             initAudio();
             document.getElementById('startScreen').style.display = 'none';
             document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('nameInput').style.display = 'none';
+            document.getElementById('newRecord').style.display = 'none';
+            renderLeaderboard();
 
             // Reset game state
             moto = {
