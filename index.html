@@ -124,30 +124,31 @@
             left: 50%;
             transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.9);
-            padding: 40px;
+            padding: 25px 35px;
             border-radius: 10px;
             text-align: center;
             border: 2px solid #e94560;
+            z-index: 5;
         }
         #startScreen h1 {
             color: #e94560;
-            font-size: 48px;
-            margin-bottom: 30px;
+            font-size: 36px;
+            margin-bottom: 18px;
         }
         #startScreen p {
             color: #fff;
-            font-size: 18px;
-            margin-bottom: 15px;
+            font-size: 15px;
+            margin-bottom: 10px;
         }
         #startScreen button {
             background: #e94560;
             color: #fff;
             border: none;
-            padding: 15px 40px;
-            font-size: 18px;
+            padding: 12px 35px;
+            font-size: 16px;
             border-radius: 5px;
             cursor: pointer;
-            margin-top: 20px;
+            margin-top: 14px;
             transition: background 0.3s;
         }
         #startScreen button:hover {
@@ -170,6 +171,7 @@
             border-radius: 8px;
             border: 2px solid #e94560;
             min-width: 180px;
+            z-index: 2;
         }
         #leaderboard h3 {
             color: #e94560;
@@ -194,6 +196,34 @@
             color: #666;
             font-style: italic;
             text-align: center;
+        }
+        /* Marquee ticker above canvas */
+        #scoreTicker {
+            width: 1008px;
+            max-width: 100%;
+            background: rgba(0,0,0,0.9);
+            border: 2px solid #e94560;
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            padding: 7px 0;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        #tickerTrack {
+            display: inline-block;
+            animation: ticker 30s linear infinite;
+        }
+        #tickerTrack span {
+            color: #fff;
+            font-size: 13px;
+            padding: 0 12px;
+        }
+        #tickerTrack span b {
+            color: #e94560;
+        }
+        @keyframes ticker {
+            from { transform: translateX(1100px); }
+            to   { transform: translateX(-100%); }
         }
         #nameInput {
             display: none;
@@ -247,6 +277,7 @@
     </style>
 </head>
 <body>
+    <div id="scoreTicker"><div id="tickerTrack"><span>Loading scores...</span></div></div>
     <div id="gameContainer">
         <canvas id="game" width="1000" height="500"></canvas>
         <div id="ui">
@@ -665,6 +696,20 @@
                     ${s.name} <span class="score-distance">${s.distance}m</span>
                 </li>`;
             }).join('');
+            updateTicker();
+        }
+
+        function updateTicker() {
+            if (cachedScores.length === 0) return;
+            const track = document.getElementById('tickerTrack');
+            const items = cachedScores.map((s, i) =>
+                `<span><b>#${i + 1} ${s.name}</b> ${s.distance}m</span>`
+            ).join('<span style="color:#e94560">★</span>');
+            track.innerHTML = items;
+            // Speed: ~80px per second regardless of content length
+            const totalWidth = track.scrollWidth + 1100;
+            const duration = totalWidth / 80;
+            track.style.animationDuration = duration + 's';
         }
 
         function promptForName() {
