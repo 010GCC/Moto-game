@@ -18,21 +18,23 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            height: 100vh;
+            overflow: hidden;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             flex-direction: column;
-            gap: 20px;
+            gap: 12px;
         }
         #gameContainer {
             position: relative;
-            max-width: 100%;
+            max-width: min(1000px, 100vw);
+            width: 100%;
         }
         canvas {
             border: 4px solid #e94560;
             border-top: none;
             border-radius: 0 0 8px 8px;
             box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
-            max-width: 100%;
+            width: 100%;
             height: auto;
             touch-action: none;
             display: block;
@@ -83,7 +85,9 @@
         #instructions {
             color: #aaa;
             text-align: center;
-            font-size: 14px;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            opacity: 0.7;
         }
         #gameOver {
             position: absolute;
@@ -168,7 +172,8 @@
         #gameWrapper {
             display: flex;
             flex-direction: column;
-            max-width: 100%;
+            max-width: min(1000px, 100vw);
+            width: 100%;
         }
         #scoreTicker {
             background: rgba(0,0,0,0.9);
